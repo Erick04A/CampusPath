@@ -1,5 +1,7 @@
 # CampusPath - Plataforma de Movilidad Colaborativa UDLA
 
+Sitio desplegado: [https://erick04a.github.io/CampusPath/](https://erick04a.github.io/CampusPath/)
+
 CampusPath es la plataforma de movilidad sustentable y compartida para la comunidad de la Universidad de las Américas (UDLA) en Ecuador. Permite conectar a estudiantes, docentes y personal administrativo para compartir traslados entre los tres campus principales en Quito: UDLAPARK, Granados y Colón.
 
 ## Características Principales
