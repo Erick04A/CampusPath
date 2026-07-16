@@ -153,6 +153,12 @@ const campusCoords: Record<string, [number, number]> = {
   colon: [-0.2022, -78.4851]
 };
 
+declare global {
+  interface Window {
+    gtag?: (...args: any[]) => void;
+  }
+}
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => localStorage.getItem('campuspath_logged_in') === 'true');
   const [showLogin, setShowLogin] = useState<boolean>(false);
@@ -301,42 +307,70 @@ function App() {
   const heatmapInstanceRef = useRef<L.Map | null>(null);
 
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
 
   const checkStatus = useCallback(async () => {
+    let isConnected = false;
     try {
       const healthRes = await fetch(`${API_BASE_URL}/health`);
       if (healthRes.ok) {
-        setBackendConnected(true);
+        isConnected = true;
+      }
+    } catch {
+      isConnected = false;
+    }
+    setBackendConnected(isConnected);
 
+    if (isConnected) {
+      try {
         const profileRes = await fetch(`${API_BASE_URL}/user`);
         if (profileRes.ok) {
           const profileData = await profileRes.json();
           setUserProfile(profileData);
         }
+      } catch (err) {
+        console.error(err);
+      }
 
+      try {
         const ridesRes = await fetch(`${API_BASE_URL}/rides`);
         if (ridesRes.ok) {
           const ridesData = await ridesRes.json();
           setRides(ridesData);
         }
+      } catch (err) {
+        console.error(err);
+      }
 
+      try {
         const tripsRes = await fetch(`${API_BASE_URL}/trips/upcoming`);
         if (tripsRes.ok) {
           const tripsData = await tripsRes.json();
           setUpcomingTrips(tripsData);
         }
+      } catch (err) {
+        console.error(err);
+      }
 
+      try {
         const metricsRes = await fetch(`${API_BASE_URL}/metrics`);
         if (metricsRes.ok) {
           const metricsData = await metricsRes.json();
           setMetrics(metricsData);
         }
-      } else {
-        setBackendConnected(false);
+      } catch (err) {
+        console.error(err);
       }
-    } catch {
-      setBackendConnected(false);
+
+      try {
+        const tripsRes = await fetch(`${API_BASE_URL}/trips`);
+        if (tripsRes.ok) {
+          const tripsData = await tripsRes.json();
+          setOpenTrips(tripsData);
+        }
+      } catch (err) {
+        console.error(err);
+      }
     }
 
     try {
@@ -350,16 +384,6 @@ function App() {
     } catch (err) {
       console.error(err);
     }
-
-    try {
-      const tripsRes = await fetch(`${API_BASE_URL}/trips`);
-      if (tripsRes.ok) {
-        const tripsData = await tripsRes.json();
-        setOpenTrips(tripsData);
-      }
-    } catch (err) {
-      console.error(err);
-    }
   }, [API_BASE_URL]);
 
   useEffect(() => {
@@ -367,6 +391,26 @@ function App() {
     const interval = setInterval(checkStatus, 5000);
     return () => clearInterval(interval);
   }, [checkStatus]);
+
+  useEffect(() => {
+    const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID;
+    if (!measurementId) return;
+
+    const script1 = document.createElement('script');
+    script1.async = true;
+    script1.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
+    document.head.appendChild(script1);
+
+    const script2 = document.createElement('script');
+    script2.innerHTML = `
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){window.dataLayer.push(arguments);}
+      window.gtag = gtag;
+      gtag('js', new Date());
+      gtag('config', '${measurementId}');
+    `;
+    document.head.appendChild(script2);
+  }, []);
 
   const calcularZona = (lat: number, lng: number): string => {
     const distUdlapark = Math.abs(lat - (-0.1622)) + Math.abs(lng - (-78.4560));
@@ -458,6 +502,14 @@ function App() {
       }
     }
   }, [isLoggedIn, currentPath]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      document.title = 'CampusPath';
+    } else {
+      document.title = 'CampusPath | Movilidad Colaborativa Exclusiva UDLA';
+    }
+  }, [isLoggedIn]);
 
   useEffect(() => {
     if (activeTab === 'inicio' && routesMapContainerRef.current) {
@@ -663,6 +715,11 @@ function App() {
     localStorage.setItem('campuspath_user_email', loginEmail);
     setUserEmail(loginEmail);
     setLoginError(null);
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'registro_verificado', {
+        user_email: loginEmail
+      });
+    }
     setIsLoggedIn(true);
     navigate('/dashboard');
     setActiveTab('dashboard');
@@ -693,6 +750,31 @@ function App() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+  const handleFinalizeTrip = async (tripId: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/trips/${tripId}/finalizar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ creador_id: userEmail }),
+      });
+      if (res.ok) {
+        triggerNotification('Viaje finalizado con éxito');
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', 'viaje_finalizado', {
+            trip_id: tripId,
+            user_email: userEmail
+          });
+        }
+        checkStatus();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        triggerNotification(errorData.detail || 'No se pudo finalizar el viaje');
+      }
+    } catch {
       triggerNotification('Error de conexión');
     }
   };
@@ -1136,14 +1218,24 @@ function App() {
                           )}
                         </div>
 
-                        <button
-                          className="btn btn-secondary"
-                          disabled={isCreator || isJoined || isFull}
-                          onClick={() => handleJoinTrip(trip.id)}
-                          style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
-                        >
-                          {isCreator ? 'Tu Viaje' : isJoined ? 'Ya estás Unido' : isFull ? 'Cupos Llenos' : 'Unirse al Grupo'}
-                        </button>
+                        {isCreator && trip.estado !== 'cerrado' ? (
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => handleFinalizeTrip(trip.id)}
+                            style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
+                          >
+                            Finalizar Viaje
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-secondary"
+                            disabled={isCreator || isJoined || isFull || trip.estado === 'cerrado'}
+                            onClick={() => handleJoinTrip(trip.id)}
+                            style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
+                          >
+                            {trip.estado === 'cerrado' ? 'Viaje Finalizado' : isCreator ? 'Tu Viaje' : isJoined ? 'Ya estás Unido' : isFull ? 'Cupos Llenos' : 'Unirse al Grupo'}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
