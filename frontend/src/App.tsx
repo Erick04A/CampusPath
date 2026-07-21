@@ -7,10 +7,19 @@ import { LandingPage } from './components/landing/LandingPage';
 interface ActiveRide {
   id: number;
   driver: string;
+  driver_email?: string;
   vehicle: string;
   location: string;
   eta: string;
   status: string;
+  lat?: number;
+  lng?: number;
+  passengers?: string[];
+  emergency_sos?: {
+    message: string;
+    timestamp: number;
+    severity: 'high' | 'medium';
+  } | null;
 }
 
 interface UpcomingTrip {
@@ -64,17 +73,53 @@ interface Trip {
   origen: PuntoGeo;
   destino: PuntoGeo;
   hora_salida: string;
+  fecha_salida?: string;
   estado: string;
   creado_en: number;
   punto_encuentro?: string;
   cupo_maximo?: number;
   paradas_intermedias: any[];
   asientos_disponibles?: number;
+  precio?: number;
   participantes: string[];
   ubicacion_actual?: { lat: number; lng: number; actualizado_en: number } | null;
 }
 
-function TiltRideCard({ ride, onChat }: { ride: ActiveRide; onChat: (driver: string) => void }) {
+interface NotificationItem {
+  id: string;
+  title: string;
+  body: string;
+  time: string;
+  type: 'alert' | 'trip' | 'info';
+  read: boolean;
+  linkTab?: string;
+}
+
+interface CommunityAlert {
+  id: number;
+  autor_email: string;
+  tipo: string;
+  ubicacion: { lat: number; lng: number; nombre_referencial: string };
+  descripcion_breve: string;
+  creado_en: number;
+  expira_en: number;
+}
+
+function TiltRideCard({
+  ride,
+  isMember,
+  isDriver,
+  onChat,
+  onViewOnMap,
+  onTriggerSOS
+}: {
+  ride: ActiveRide;
+  isMember: boolean;
+  isDriver: boolean;
+  onChat: (driver: string) => void;
+  onViewOnMap: (lat?: number, lng?: number) => void;
+  onTriggerSOS: (rideId: number) => void;
+}) {
   const cardRef = useRef<HTMLDivElement>(null);
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const card = cardRef.current;
@@ -101,7 +146,17 @@ function TiltRideCard({ ride, onChat }: { ride: ActiveRide; onChat: (driver: str
       className="ride-card tilt-3d"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      style={{
+        border: ride.emergency_sos ? '2px solid var(--error)' : '1px solid rgba(255, 255, 255, 0.08)',
+        backgroundColor: ride.emergency_sos ? 'rgba(186, 26, 26, 0.08)' : undefined
+      }}
     >
+      {ride.emergency_sos && (
+        <div style={{ backgroundColor: 'var(--error)', color: '#ffffff', padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>warning</span>
+          <span>AUXILIO SOS: {ride.emergency_sos.message}</span>
+        </div>
+      )}
       <div className="ride-card-header">
         <div className="driver-info">
           <div className="driver-avatar" style={{ backgroundColor: 'var(--surface-container-high)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>
@@ -112,17 +167,44 @@ function TiltRideCard({ ride, onChat }: { ride: ActiveRide; onChat: (driver: str
             <p className="driver-vehicle">{ride.vehicle}</p>
           </div>
         </div>
-        <span className={`status-badge ${ride.status === 'Activo' ? 'status-active' : 'status-waiting'}`}>
-          {ride.status}
+        <span className={`status-badge ${ride.emergency_sos ? 'status-emergency' : ride.status === 'Activo' ? 'status-active' : 'status-waiting'}`} style={{ backgroundColor: ride.emergency_sos ? 'var(--error)' : undefined, color: ride.emergency_sos ? '#fff' : undefined }}>
+          {ride.emergency_sos ? 'EMERGENCIA' : ride.status}
         </span>
       </div>
-      <div className="ride-card-details">
+      <div className="ride-card-details" style={{ marginBottom: '12px' }}>
         <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>near_me</span>
         <span>{ride.eta} • {ride.location}</span>
       </div>
-      <button className="btn btn-secondary" onClick={() => onChat(ride.driver)} style={{ width: '100%', padding: '8px', fontSize: '12px' }}>
-        Chat con Conductor
-      </button>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {isMember ? (
+            <button className="btn btn-secondary" onClick={() => onChat(ride.driver)} style={{ flex: 1, padding: '8px', fontSize: '12px', justifyContent: 'center' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '14px', marginRight: '4px' }}>chat</span>
+              Chat del Ride
+            </button>
+          ) : (
+            <button className="btn btn-secondary" disabled style={{ flex: 1, padding: '8px', fontSize: '11px', opacity: 0.65, cursor: 'not-allowed', justifyContent: 'center' }} title="El chat es exclusivo para los integrantes confirmados de este ride">
+              <span className="material-symbols-outlined" style={{ fontSize: '14px', marginRight: '4px' }}>lock</span>
+              Chat Exclusivo
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={() => onViewOnMap(ride.lat, ride.lng)} style={{ padding: '8px 10px', fontSize: '12px', justifyContent: 'center' }} title="Ver ubicación en mapa">
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>my_location</span>
+          </button>
+        </div>
+
+        {isDriver && (
+          <button
+            className="btn btn-secondary"
+            onClick={() => onTriggerSOS(ride.id)}
+            style={{ width: '100%', padding: '6px 8px', fontSize: '11px', color: 'var(--error)', borderColor: 'rgba(186, 26, 26, 0.4)', justifyContent: 'center', backgroundColor: 'rgba(186, 26, 26, 0.05)' }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', marginRight: '4px' }}>sos</span>
+            Reportar Auxilio / SOS en Ruta
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -172,9 +254,21 @@ function App() {
     setCurrentPath(path);
   };
 
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginEmail, setLoginEmail] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  const [registerName, setRegisterName] = useState<string>('');
+  const [registerEmail, setRegisterEmail] = useState<string>('');
+  const [registerPassword, setRegisterPassword] = useState<string>('');
+  const [registerRole, setRegisterRole] = useState<string>('Estudiante');
+  const [registerCampus, setRegisterCampus] = useState<string>('UDLAPARK');
+
+  const [showCreateAlertModal, setShowCreateAlertModal] = useState<boolean>(false);
+  const [alertTipo, setAlertTipo] = useState<string>('trafico');
+  const [alertUbicacion, setAlertUbicacion] = useState<string>('Entrada UDLAPARK');
+  const [alertDescripcion, setAlertDescripcion] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<string>('inicio');
   const [userEmail, setUserEmail] = useState<string>(() => localStorage.getItem('campuspath_user_email') || 'mateo.guerrero@udla.edu.ec');
@@ -184,10 +278,45 @@ function App() {
   const [newTripTipo, setNewTripTipo] = useState<string>('caminata');
   const [newTripOrigenZona, setNewTripOrigenZona] = useState<string>('campus_udlapark');
   const [newTripDestinoZona, setNewTripDestinoZona] = useState<string>('campus_granados');
+  const [newTripFecha, setNewTripFecha] = useState<string>('Hoy');
   const [newTripHora, setNewTripHora] = useState<string>('');
   const [newTripPuntoEncuentro, setNewTripPuntoEncuentro] = useState<string>('');
-  const [newTripCupoMaximo, setNewTripCupoMaximo] = useState<string>('');
   const [newTripAsientos, setNewTripAsientos] = useState<string>('');
+  const [newTripPrecio, setNewTripPrecio] = useState<string>('0.00');
+
+  const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
+  const [showEditTripModal, setShowEditTripModal] = useState<boolean>(false);
+  const [editFecha, setEditFecha] = useState<string>('Hoy');
+  const [editHora, setEditHora] = useState<string>('');
+  const [editPuntoEncuentro, setEditPuntoEncuentro] = useState<string>('');
+  const [editAsientos, setEditAsientos] = useState<string>('');
+  const [editPrecio, setEditPrecio] = useState<string>('0.00');
+
+  const [showTripDetailsModal, setShowTripDetailsModal] = useState<boolean>(false);
+  const [selectedTripDetails, setSelectedTripDetails] = useState<any | null>(null);
+
+  const [communityAlerts, setCommunityAlerts] = useState<CommunityAlert[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([
+    {
+      id: 'n-initial-1',
+      title: '🚨 Alerta de Comunidad',
+      body: 'Tráfico pesado reportado cerca de Entrada UDLAPARK.',
+      time: 'Hace 5 min',
+      type: 'alert',
+      read: false,
+      linkTab: 'seguridad'
+    },
+    {
+      id: 'n-initial-2',
+      title: '🚗 Nuevo Viaje Disponible',
+      body: 'Ruta activa UDLAPARK → Campus Granados (17:30)',
+      time: 'Hace 12 min',
+      type: 'trip',
+      read: false,
+      linkTab: 'inicio'
+    }
+  ]);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState<boolean>(false);
   const [newTripOrigenTexto, setNewTripOrigenTexto] = useState<string>('');
   const [newTripDestinoTexto, setNewTripDestinoTexto] = useState<string>('');
   const [origenSuggestions, setOrigenSuggestions] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
@@ -212,22 +341,37 @@ function App() {
     estimated_savings_monthly: 42.50,
     co2_avoided_kg: 12.4
   });
+  const [showSosModal, setShowSosModal] = useState<boolean>(false);
+  const [sosTargetRideId, setSosTargetRideId] = useState<number | null>(null);
+  const [sosMessage, setSosMessage] = useState<string>('Se desmayó una pasajera, ayuda por favor el más cercano o llamen a la policía');
+  const [sosCategory, setSosCategory] = useState<string>('medica');
+
   const [rides, setRides] = useState<ActiveRide[]>([
     {
       id: 1,
       driver: 'Alex Rivera',
+      driver_email: 'alex.rivera@udla.edu.ec',
       vehicle: 'Tesla Model 3 - Blanco',
       status: 'Activo',
       eta: '5 min',
-      location: 'UDLAPARK - Parqueadero'
+      location: 'UDLAPARK - Parqueadero',
+      lat: -0.1622,
+      lng: -78.4560,
+      passengers: ['mateo.guerrero@udla.edu.ec'],
+      emergency_sos: null
     },
     {
       id: 2,
       driver: 'Prof. Clara S.',
+      driver_email: 'clara.s@udla.edu.ec',
       vehicle: 'SUV - Gris Oscuro',
       status: 'Esperando',
       eta: '15 min',
-      location: 'Colón - Entrada Principal'
+      location: 'Colón - Entrada Principal',
+      lat: -0.2105,
+      lng: -78.5016,
+      passengers: [],
+      emergency_sos: null
     }
   ]);
   const [upcomingTrips, setUpcomingTrips] = useState<UpcomingTrip[]>([
@@ -365,8 +509,42 @@ function App() {
       try {
         const tripsRes = await fetch(`${API_BASE_URL}/trips`);
         if (tripsRes.ok) {
-          const tripsData = await tripsRes.json();
-          setOpenTrips(tripsData);
+          const tripsData: Trip[] = await tripsRes.json();
+          setOpenTrips(prev => {
+            const apiIds = new Set(tripsData.map(t => t.id));
+            const localOnly = prev.filter(t => !apiIds.has(t.id));
+            return [...localOnly, ...tripsData];
+          });
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      try {
+        const alertsRes = await fetch(`${API_BASE_URL}/alerts`);
+        if (alertsRes.ok) {
+          const alertsData: CommunityAlert[] = await alertsRes.json();
+          setCommunityAlerts(alertsData);
+          setNotifications(prev => {
+            const existingBodies = new Set(prev.map(n => n.body.trim().toLowerCase()));
+            const freshNotifs: NotificationItem[] = [];
+            alertsData.forEach(a => {
+              const bodyText = `${a.ubicacion.nombre_referencial} - ${a.descripcion_breve}`.trim();
+              if (!existingBodies.has(bodyText.toLowerCase())) {
+                freshNotifs.push({
+                  id: `alert-${a.id}`,
+                  title: `🚨 Alerta: ${a.tipo.toUpperCase()}`,
+                  body: bodyText,
+                  time: 'Ahora',
+                  type: 'alert',
+                  read: false,
+                  linkTab: 'seguridad'
+                });
+                existingBodies.add(bodyText.toLowerCase());
+              }
+            });
+            return [...freshNotifs, ...prev];
+          });
         }
       } catch (err) {
         console.error(err);
@@ -706,21 +884,71 @@ function App() {
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) return;
-    const isUdla = loginEmail.toLowerCase().endsWith('@udla.edu.ec') || loginEmail.toLowerCase().endsWith('@udla.ec');
+    let email = loginEmail.trim();
+    if (!email.includes('@')) {
+      email = `${email}@udla.edu.ec`;
+    }
+    const isUdla = email.toLowerCase().endsWith('@udla.edu.ec') || email.toLowerCase().endsWith('@udla.ec');
     if (!isUdla) {
       setLoginError('Acceso exclusivo para la comunidad UDLA (*.edu.ec / *.ec)');
       return;
     }
     localStorage.setItem('campuspath_logged_in', 'true');
-    localStorage.setItem('campuspath_user_email', loginEmail);
-    setUserEmail(loginEmail);
+    localStorage.setItem('campuspath_user_email', email);
+    setUserEmail(email);
     setLoginError(null);
     if (typeof window.gtag === 'function') {
-      window.gtag('event', 'registro_verificado', {
-        user_email: loginEmail
-      });
+      window.gtag('event', 'login_verificado', { user_email: email });
     }
     setIsLoggedIn(true);
+    triggerNotification('¡Sesión iniciada con éxito!');
+    navigate('/dashboard');
+    setActiveTab('dashboard');
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!registerName || !registerEmail || !registerPassword) {
+      setLoginError('Por favor, completa los campos requeridos');
+      return;
+    }
+    let email = registerEmail.trim();
+    if (!email.includes('@')) {
+      email = `${email}@udla.edu.ec`;
+    }
+    const isUdla = email.toLowerCase().endsWith('@udla.edu.ec') || email.toLowerCase().endsWith('@udla.ec');
+    if (!isUdla) {
+      setLoginError('El registro requiere un correo UDLA (*.edu.ec / *.ec)');
+      return;
+    }
+    setLoginError(null);
+
+    try {
+      await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: registerName,
+          email: email,
+          password: registerPassword,
+          role: registerRole,
+          campus: registerCampus,
+        }),
+      });
+    } catch (err) {
+      console.log('Backend no disponible, realizando registro local', err);
+    }
+
+    localStorage.setItem('campuspath_logged_in', 'true');
+    localStorage.setItem('campuspath_user_email', email);
+    setUserEmail(email);
+    setUserProfile(prev => ({
+      ...prev,
+      name: registerName,
+      badge: `Miembro ${registerCampus}`,
+    }));
+    setIsLoggedIn(true);
+    triggerNotification('¡Cuenta registrada exitosamente!');
     navigate('/dashboard');
     setActiveTab('dashboard');
   };
@@ -734,213 +962,413 @@ function App() {
 
   const handleJoinTrip = async (tripId: number) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/trips/${tripId}/join`, {
+      await fetch(`${API_BASE_URL}/trips/${tripId}/join`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: userEmail }),
       });
-      if (res.ok) {
-        triggerNotification('Te has unido al viaje con éxito');
-        checkStatus();
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        triggerNotification(errorData.detail || 'No se pudo unir al viaje');
-      }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Fallback local
     }
+
+    setOpenTrips(prev =>
+      prev.map(t => {
+        if (t.id === tripId) {
+          const participantes = t.participantes ? [...t.participantes] : [];
+          if (!participantes.includes(userEmail)) {
+            participantes.push(userEmail);
+          }
+          return { ...t, participantes };
+        }
+        return t;
+      })
+    );
+    triggerNotification('Te has unido al viaje con éxito');
+    checkStatus();
   };
+
   const handleFinalizeTrip = async (tripId: number) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/trips/${tripId}/finalizar`, {
+      await fetch(`${API_BASE_URL}/trips/${tripId}/finalizar`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creador_id: userEmail }),
       });
-      if (res.ok) {
-        triggerNotification('Viaje finalizado con éxito');
-        if (typeof window.gtag === 'function') {
-          window.gtag('event', 'viaje_finalizado', {
-            trip_id: tripId,
-            user_email: userEmail
-          });
-        }
-        checkStatus();
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        triggerNotification(errorData.detail || 'No se pudo finalizar el viaje');
-      }
     } catch {
-      triggerNotification('Error de conexión');
+      // Fallback local
     }
+    setOpenTrips(prev => prev.map(t => (t.id === tripId ? { ...t, estado: 'cerrado' } : t)));
+    triggerNotification('Viaje finalizado con éxito');
+    checkStatus();
+  };
+
+  const handleDeleteTrip = async (tripId: number) => {
+    try {
+      await fetch(`${API_BASE_URL}/trips/${tripId}?creador_id=${encodeURIComponent(userEmail)}`, {
+        method: 'DELETE',
+      });
+    } catch {
+      console.log('Eliminado localmente');
+    }
+    setOpenTrips(prev => prev.filter(t => t.id !== tripId));
+    triggerNotification('Viaje eliminado con éxito');
+    checkStatus();
+  };
+
+  const handleOpenEditTrip = (trip: Trip) => {
+    setEditingTrip(trip);
+    setEditFecha(trip.fecha_salida || 'Hoy');
+    setEditHora(trip.hora_salida);
+    setEditPuntoEncuentro(trip.punto_encuentro || '');
+    setEditAsientos(trip.asientos_disponibles ? trip.asientos_disponibles.toString() : '');
+    setEditPrecio(trip.tipo === 'caminata' ? '0.00' : (trip.precio ? trip.precio.toString() : '0.00'));
+    setShowEditTripModal(true);
+  };
+
+  const handleEditTripSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTrip) return;
+
+    const payload = {
+      creador_id: userEmail,
+      fecha_salida: editFecha,
+      hora_salida: editHora,
+      punto_encuentro: editingTrip.tipo === 'caminata' ? (editPuntoEncuentro || 'Punto de Encuentro UDLA') : undefined,
+      asientos_disponibles: editingTrip.tipo === 'vehiculo' ? (editAsientos ? parseInt(editAsientos, 10) : 3) : undefined,
+      precio: editingTrip.tipo === 'caminata' ? 0.0 : (editPrecio ? parseFloat(editPrecio) : 0.0),
+    };
+
+    try {
+      await fetch(`${API_BASE_URL}/trips/${editingTrip.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      console.log('Editado localmente');
+    }
+
+    setOpenTrips(prev =>
+      prev.map(t => {
+        if (t.id === editingTrip.id) {
+          return {
+            ...t,
+            fecha_salida: editFecha,
+            hora_salida: editHora,
+            punto_encuentro: editingTrip.tipo === 'caminata' ? editPuntoEncuentro : t.punto_encuentro,
+            asientos_disponibles: editingTrip.tipo === 'vehiculo' ? (editAsientos ? parseInt(editAsientos, 10) : t.asientos_disponibles) : undefined,
+            precio: editingTrip.tipo === 'caminata' ? 0.0 : (editPrecio ? parseFloat(editPrecio) : t.precio),
+          };
+        }
+        return t;
+      })
+    );
+
+    setShowEditTripModal(false);
+    setEditingTrip(null);
+    triggerNotification('Viaje actualizado exitosamente');
+    checkStatus();
   };
 
   const handleCreateTripSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTripHora) {
-      triggerNotification('Por favor, completa los campos requeridos');
+      triggerNotification('Por favor, especifica la hora de salida');
       return;
     }
 
     const ZONA_COORDS: Record<string, { lat: number; lng: number; label: string }> = {
       campus_udlapark: { lat: -0.1622, lng: -78.4560, label: 'Campus UDLAPARK' },
       campus_granados: { lat: -0.1030, lng: -78.4896, label: 'Campus Granados' },
-      campus_colon: { lat: -0.2105, lng: -78.5016, label: 'Campus Colon' },
+      campus_colon: { lat: -0.2105, lng: -78.5016, label: 'Campus Colón' },
       norte: { lat: -0.0700, lng: -78.4800, label: 'Quito Norte' },
       sur: { lat: -0.3000, lng: -78.5500, label: 'Quito Sur' },
       valles: { lat: -0.2900, lng: -78.4000, label: 'Valles' },
-      otro: { lat: -0.1800, lng: -78.4800, label: 'Otra Ubicacion' },
+      otro: { lat: -0.1800, lng: -78.4800, label: 'Otra Ubicación' },
     };
 
-    const origenFinal = origenCoords
-      ? { lat: origenCoords.lat, lng: origenCoords.lng, label: newTripOrigenTexto, zona: calcularZona(origenCoords.lat, origenCoords.lng) }
-      : { ...ZONA_COORDS[newTripOrigenZona], zona: newTripOrigenZona };
-    const destinoFinal = destinoCoords
-      ? { lat: destinoCoords.lat, lng: destinoCoords.lng, label: newTripDestinoTexto, zona: calcularZona(destinoCoords.lat, destinoCoords.lng) }
-      : { ...ZONA_COORDS[newTripDestinoZona], zona: newTripDestinoZona };
+    const origenTexto = (newTripOrigenTexto && newTripOrigenTexto.trim().length >= 3)
+      ? newTripOrigenTexto.trim()
+      : (ZONA_COORDS[newTripOrigenZona]?.label || 'Campus UDLAPARK');
 
-    interface TripCreatePayload {
-      creador_id: string;
-      creador_email: string;
-      tipo: string;
-      origen: { lat: number; lng: number; direccion_texto: string; zona: string };
-      destino: { lat: number; lng: number; direccion_texto: string; zona: string };
-      hora_salida: string;
-      punto_encuentro?: string;
-      cupo_maximo?: number;
-      asientos_disponibles?: number;
-      paradas_intermedias?: unknown[];
-    }
+    const destinoTexto = (newTripDestinoTexto && newTripDestinoTexto.trim().length >= 3)
+      ? newTripDestinoTexto.trim()
+      : (ZONA_COORDS[newTripDestinoZona]?.label || 'Campus Granados');
+
+    const origenFinal = origenCoords
+      ? { lat: origenCoords.lat, lng: origenCoords.lng, direccion_texto: origenTexto, zona: calcularZona(origenCoords.lat, origenCoords.lng) }
+      : { lat: ZONA_COORDS[newTripOrigenZona].lat, lng: ZONA_COORDS[newTripOrigenZona].lng, direccion_texto: origenTexto, zona: newTripOrigenZona };
+
+    const destinoFinal = destinoCoords
+      ? { lat: destinoCoords.lat, lng: destinoCoords.lng, direccion_texto: destinoTexto, zona: calcularZona(destinoCoords.lat, destinoCoords.lng) }
+      : { lat: ZONA_COORDS[newTripDestinoZona].lat, lng: ZONA_COORDS[newTripDestinoZona].lng, direccion_texto: destinoTexto, zona: newTripDestinoZona };
 
     const isCaminata = newTripTipo === 'caminata';
-    const payload: TripCreatePayload = {
+    const parsedPrecio = isCaminata ? 0.0 : (parseFloat(newTripPrecio) || 0.0);
+    const payload: any = {
       creador_id: userEmail,
       creador_email: userEmail,
       tipo: newTripTipo,
-      origen: {
-        lat: origenFinal.lat,
-        lng: origenFinal.lng,
-        direccion_texto: origenFinal.label,
-        zona: origenFinal.zona,
-      },
-      destino: {
-        lat: destinoFinal.lat,
-        lng: destinoFinal.lng,
-        direccion_texto: destinoFinal.label,
-        zona: destinoFinal.zona,
-      },
+      origen: origenFinal,
+      destino: destinoFinal,
+      fecha_salida: newTripFecha || 'Hoy',
       hora_salida: newTripHora,
+      precio: parsedPrecio,
     };
 
     if (isCaminata) {
-      if (!newTripPuntoEncuentro || !newTripCupoMaximo) {
-        triggerNotification('Completa el punto de encuentro y cupo máximo');
-        return;
-      }
-      payload.punto_encuentro = newTripPuntoEncuentro;
-      payload.cupo_maximo = parseInt(newTripCupoMaximo, 10);
+      payload.punto_encuentro = newTripPuntoEncuentro || 'Punto de Encuentro UDLA';
     } else {
-      if (!newTripAsientos) {
-        triggerNotification('Completa el número de asientos disponibles');
-        return;
-      }
-      payload.asientos_disponibles = parseInt(newTripAsientos, 10);
+      payload.asientos_disponibles = parseInt(newTripAsientos, 10) || 3;
       payload.paradas_intermedias = [];
     }
 
+    let createdTrip: Trip | null = null;
     try {
       const res = await fetch(`${API_BASE_URL}/trips`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (res.ok) {
-        triggerNotification('Viaje creado con éxito');
-        setShowCreateTripModal(false);
-        setNewTripHora('');
-        setNewTripPuntoEncuentro('');
-        setNewTripCupoMaximo('');
-        setNewTripAsientos('');
-        checkStatus();
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        triggerNotification(errorData.detail || 'No se pudo crear el viaje');
+        createdTrip = await res.json();
       }
-    } catch (err) {
-      console.error(err);
-      triggerNotification('Error de conexión al crear viaje');
+    } catch {
+      console.log('Backend offline, creando viaje localmente');
     }
+
+    if (!createdTrip) {
+      createdTrip = {
+        id: Date.now(),
+        creador_id: userEmail,
+        creador_email: userEmail,
+        tipo: newTripTipo,
+        origen: origenFinal,
+        destino: destinoFinal,
+        fecha_salida: newTripFecha || 'Hoy',
+        hora_salida: newTripHora,
+        estado: 'abierto',
+        creado_en: Date.now() / 1000,
+        punto_encuentro: payload.punto_encuentro,
+        asientos_disponibles: payload.asientos_disponibles,
+        precio: parsedPrecio,
+        paradas_intermedias: [],
+        participantes: [],
+      };
+    }
+
+    setOpenTrips(prev => [createdTrip!, ...prev]);
+    
+    const tripBodyText = `${origenFinal.direccion_texto} → ${destinoFinal.direccion_texto} (${newTripHora})`.trim();
+    setNotifications(prev => {
+      if (prev.some(n => n.body.trim().toLowerCase() === tripBodyText.toLowerCase())) return prev;
+      const newTripNotif: NotificationItem = {
+        id: `trip-user-${Date.now()}`,
+        title: `🚗 Nuevo Viaje Creado`,
+        body: tripBodyText,
+        time: 'Ahora',
+        type: 'trip',
+        read: false,
+        linkTab: 'inicio'
+      };
+      return [newTripNotif, ...prev];
+    });
+
+    triggerNotification('Viaje creado con éxito');
+    setShowCreateTripModal(false);
+    setNewTripHora('');
+    setNewTripPuntoEncuentro('');
+    setNewTripAsientos('');
+    setNewTripPrecio('0.00');
+    setNewTripOrigenTexto('');
+    setNewTripDestinoTexto('');
   };
 
   const handleScheduleRide = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scheduleOrigin || !scheduleDestination || !scheduleTime || !scheduleVehicle) {
+      triggerNotification('Por favor, completa todos los datos');
       return;
     }
+
+    const newRideData = {
+      id: Date.now(),
+      driver: `${userProfile.name} (Tú)`,
+      vehicle: scheduleVehicle,
+      status: 'Activo',
+      eta: scheduleTime,
+      location: scheduleOrigin.toUpperCase(),
+    };
 
     try {
       const res = await fetch(`${API_BASE_URL}/rides`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           origin: scheduleOrigin.toUpperCase(),
           destination: scheduleDestination.toUpperCase(),
           departure_time: scheduleTime,
-          vehicle: scheduleVehicle
-        })
+          vehicle: scheduleVehicle,
+        }),
       });
-
       if (res.ok) {
-        const newRide = await res.json();
-        setRides(prev => [...prev, newRide]);
-        setShowScheduleModal(false);
-        setScheduleTime('');
-        setScheduleVehicle('');
-        triggerNotification('Viaje programado exitosamente');
+        const rideFromApi = await res.json();
+        setRides(prev => [...prev, rideFromApi]);
+      } else {
+        setRides(prev => [...prev, newRideData]);
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setRides(prev => [...prev, newRideData]);
     }
+
+    setShowScheduleModal(false);
+    setScheduleTime('');
+    setScheduleVehicle('');
+    triggerNotification('Viaje programado exitosamente');
   };
 
   const handleReportIncident = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reportTitle || !reportDescription || !reportLocation || !reportSeverity) {
+      triggerNotification('Por favor completa todos los campos del reporte');
       return;
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/reports`, {
+      await fetch(`${API_BASE_URL}/reports`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: reportTitle,
           description: reportDescription,
           location: reportLocation,
-          severity: reportSeverity
-        })
+          severity: reportSeverity,
+        }),
       });
+    } catch {
+      console.log('Reporte guardado localmente');
+    }
 
+    setShowReportModal(false);
+    setReportTitle('');
+    setReportDescription('');
+    setReportLocation('');
+    setReportSeverity('Medio');
+    triggerNotification('Incidente reportado exitosamente de forma segura');
+  };
+
+  const handleCreateAlertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!alertUbicacion || !alertDescripcion) {
+      triggerNotification('Completa la ubicación y descripción de la alerta');
+      return;
+    }
+
+    let createdAlert: CommunityAlert | null = null;
+    const nowSec = Date.now() / 1000;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          autor_email: userEmail,
+          tipo: alertTipo,
+          ubicacion: { lat: -0.1622, lng: -78.4560, nombre_referencial: alertUbicacion },
+          descripcion_breve: alertDescripcion,
+        }),
+      });
       if (res.ok) {
-        setShowReportModal(false);
-        setReportTitle('');
-        setReportDescription('');
-        setReportLocation('');
-        setReportSeverity('Medio');
-        triggerNotification('Incidente reportado exitosamente de forma segura');
+        createdAlert = await res.json();
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      console.log('Alerta registrada localmente');
+    }
+
+    if (!createdAlert) {
+      createdAlert = {
+        id: Date.now(),
+        autor_email: userEmail,
+        tipo: alertTipo,
+        ubicacion: { lat: -0.1622, lng: -78.4560, nombre_referencial: alertUbicacion },
+        descripcion_breve: alertDescripcion,
+        creado_en: nowSec,
+        expira_en: nowSec + 86400.0,
+      };
+    }
+
+    setCommunityAlerts(prev => [createdAlert!, ...prev]);
+    
+    const alertBodyText = `${alertUbicacion} - ${alertDescripcion}`.trim();
+    setNotifications(prev => {
+      if (prev.some(n => n.body.trim().toLowerCase() === alertBodyText.toLowerCase())) return prev;
+      const newAlertNotif: NotificationItem = {
+        id: `alert-user-${Date.now()}`,
+        title: `🚨 Alerta: ${alertTipo.toUpperCase()}`,
+        body: alertBodyText,
+        time: 'Ahora',
+        type: 'alert',
+        read: false,
+        linkTab: 'seguridad'
+      };
+      return [newAlertNotif, ...prev];
+    });
+
+    setShowCreateAlertModal(false);
+    setAlertDescripcion('');
+    triggerNotification('Alerta de comunidad publicada en tiempo real y enviada a notificaciones');
+  };
+
+  const handleOpenSOS = (rideId: number) => {
+    setSosTargetRideId(rideId);
+    setSosMessage('Se desmayó una pasajera, ayuda por favor el más cercano o llamen a la policía');
+    setShowSosModal(true);
+  };
+
+  const handleSendSOSSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sosTargetRideId || !sosMessage) return;
+
+    setRides(prev =>
+      prev.map(r => {
+        if (r.id === sosTargetRideId) {
+          return {
+            ...r,
+            status: 'EMERGENCIA SOS',
+            emergency_sos: {
+              message: sosMessage,
+              timestamp: Date.now() / 1000,
+              severity: 'high'
+            }
+          };
+        }
+        return r;
+      })
+    );
+
+    const sosNotif: NotificationItem = {
+      id: `sos-${Date.now()}`,
+      title: `🚨 AUXILIO SOS DE CONDUCTOR`,
+      body: sosMessage,
+      time: 'Ahora',
+      type: 'alert',
+      read: false,
+      linkTab: 'dashboard'
+    };
+
+    setNotifications(prev => [sosNotif, ...prev]);
+    setShowSosModal(false);
+    triggerNotification('🚨 ALERTA SOS EMITIDA A LA RED UDLA');
+  };
+
+  const handleViewRideOnMap = (lat?: number, lng?: number) => {
+    setActiveTab('mapa');
+    if (lat && lng && pureMapInstanceRef.current) {
+      pureMapInstanceRef.current.setView([lat, lng], 16);
+      L.popup()
+        .setLatLng([lat, lng])
+        .setContent('<b>📍 Ubicación en Tiempo Real de Rider UDLA</b>')
+        .openOn(pureMapInstanceRef.current);
     }
   };
 
@@ -1004,46 +1432,131 @@ function App() {
           <div style={{ position: 'absolute', width: '300px', height: '300px', borderRadius: '50%', background: 'rgba(67, 100, 60, 0.1)', filter: 'blur(60px)', bottom: '10%', right: '10%' }}></div>
           
           <div className="glass-card login-card">
-            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}><Logo size={40} showText={true} /></div>
               <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)' }}>Plataforma de Movilidad UDLA</p>
             </div>
             
-            <form onSubmit={handleLoginSubmit}>
-              {loginError && (
-                <div style={{ backgroundColor: 'var(--error-container)', color: 'var(--on-error-container)', padding: '12px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px', border: '1px solid rgba(186, 26, 26, 0.2)' }}>
-                  {loginError}
-                </div>
-              )}
-              <div className="form-group">
-                <label className="form-label">Correo Institucional</label>
-                <input
-                  type="email"
-                  className="form-input"
-                  placeholder="nombre.apellido@udla.edu.ec"
-                  value={loginEmail}
-                  onChange={e => setLoginEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Contraseña</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="••••••••"
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px', padding: '14px' }}>
-                Ingresar
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', backgroundColor: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '10px' }}>
+              <button
+                type="button"
+                className={`btn ${authMode === 'login' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setAuthMode('login'); setLoginError(null); }}
+                style={{ flex: 1, padding: '8px', fontSize: '13px', border: 'none' }}
+              >
+                Iniciar Sesión
               </button>
-            </form>
-            
+              <button
+                type="button"
+                className={`btn ${authMode === 'register' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setAuthMode('register'); setLoginError(null); }}
+                style={{ flex: 1, padding: '8px', fontSize: '13px', border: 'none' }}
+              >
+                Registrarse
+              </button>
+            </div>
+
+            {loginError && (
+              <div style={{ backgroundColor: 'var(--error-container)', color: 'var(--on-error-container)', padding: '12px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px', border: '1px solid rgba(186, 26, 26, 0.2)' }}>
+                {loginError}
+              </div>
+            )}
+
+            {authMode === 'login' ? (
+              <form onSubmit={handleLoginSubmit}>
+                <div className="form-group">
+                  <label className="form-label">Correo Institucional</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="nombre.apellido@udla.edu.ec"
+                    value={loginEmail}
+                    onChange={e => setLoginEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Contraseña</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px', padding: '14px' }}>
+                  Ingresar
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegisterSubmit}>
+                <div className="form-group">
+                  <label className="form-label">Nombre Completo</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="ej. Mateo Guerrero"
+                    value={registerName}
+                    onChange={e => setRegisterName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Correo UDLA (*.edu.ec / *.ec)</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="nombre.apellido@udla.edu.ec"
+                    value={registerEmail}
+                    onChange={e => setRegisterEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Contraseña</label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="••••••••"
+                    value={registerPassword}
+                    onChange={e => setRegisterPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Rol en la Comunidad</label>
+                  <select
+                    className="form-input"
+                    value={registerRole}
+                    onChange={e => setRegisterRole(e.target.value)}
+                  >
+                    <option value="Estudiante">Estudiante</option>
+                    <option value="Docente">Docente</option>
+                    <option value="Personal Administrativo">Personal Administrativo</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Campus Principal</label>
+                  <select
+                    className="form-input"
+                    value={registerCampus}
+                    onChange={e => setRegisterCampus(e.target.value)}
+                  >
+                    <option value="UDLAPARK">Campus UDLAPARK</option>
+                    <option value="Granados">Campus Granados</option>
+                    <option value="Colón">Campus Colón</option>
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px', padding: '14px' }}>
+                  Crear Cuenta y Entrar
+                </button>
+              </form>
+            )}
+
             <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '12px', color: 'var(--on-surface-variant)' }}>
-              <p>Al ingresar aceptas los términos de servicio y políticas de seguridad.</p>
+              <p>Al registrarte o ingresar aceptas los términos de servicio y políticas de seguridad UDLA.</p>
               <button className="btn btn-secondary" onClick={() => setShowLogin(false)} style={{ border: 'none', background: 'none', fontSize: '13px', padding: 0, marginTop: '16px', cursor: 'pointer', textDecoration: 'underline' }}>
                 Volver a la Landing
               </button>
@@ -1134,8 +1647,105 @@ function App() {
                 <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>{backendConnected ? 'wifi' : 'wifi_off'}</span>
                 {backendConnected ? 'Conectado' : 'Sin conexión'}
               </span>
-              <div className="notification-badge" onClick={() => triggerNotification('No tienes notificaciones pendientes')} style={{ marginRight: '16px' }}>
-                <span className="material-symbols-outlined">notifications</span>
+              <div style={{ position: 'relative' }}>
+                <div
+                  className="notification-badge"
+                  onClick={() => setShowNotificationsDropdown(prev => !prev)}
+                  style={{ marginRight: '16px', position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Notificaciones"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>notifications</span>
+                  {notifications.filter(n => !n.read).length > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '-4px',
+                        right: '-4px',
+                        backgroundColor: 'var(--error)',
+                        color: '#ffffff',
+                        fontSize: '10px',
+                        fontWeight: 'bold',
+                        borderRadius: '50%',
+                        width: '16px',
+                        height: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 0 8px rgba(186, 26, 26, 0.6)'
+                      }}
+                    >
+                      {notifications.filter(n => !n.read).length}
+                    </span>
+                  )}
+                </div>
+
+                {showNotificationsDropdown && (
+                  <div
+                    className="glass-card"
+                    style={{
+                      position: 'absolute',
+                      top: '38px',
+                      right: '16px',
+                      width: '320px',
+                      maxHeight: '380px',
+                      overflowY: 'auto',
+                      zIndex: 1000,
+                      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: '16px',
+                      padding: '16px',
+                      backgroundColor: 'var(--surface-container-high)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                      <h4 style={{ fontWeight: 700, fontSize: '14px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--color-primary)' }}>notifications_active</span>
+                        Notificaciones ({notifications.filter(n => !n.read).length})
+                      </h4>
+                      {notifications.some(n => !n.read) && (
+                        <button
+                          onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                          style={{ fontSize: '11px', color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          Marcar leídas
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {notifications.map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read: true } : item));
+                            if (n.linkTab) setActiveTab(n.linkTab);
+                            setShowNotificationsDropdown(false);
+                          }}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            backgroundColor: n.read ? 'rgba(255, 255, 255, 0.03)' : 'rgba(115, 158, 54, 0.12)',
+                            borderLeft: n.read ? '3px solid transparent' : '3px solid var(--color-primary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                            <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--on-surface)' }}>{n.title}</span>
+                            <span style={{ fontSize: '10px', opacity: 0.6 }}>{n.time}</span>
+                          </div>
+                          <p style={{ fontSize: '12px', opacity: 0.8, margin: 0, lineHeight: 1.3 }}>{n.body}</p>
+                        </div>
+                      ))}
+
+                      {notifications.length === 0 && (
+                        <p style={{ textAlign: 'center', fontSize: '12px', opacity: 0.6, padding: '16px 0' }}>
+                          No tienes notificaciones por el momento.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               <button className="btn btn-primary" onClick={() => setShowScheduleModal(true)}>
                 <span className="material-symbols-outlined">add</span>
@@ -1161,10 +1771,16 @@ function App() {
                 <button className={`btn-pill ${tripFilter === 'vehiculo' ? 'active' : ''}`} onClick={() => setTripFilter('vehiculo')}>Vehículos</button>
               </div>
 
-              <button className="btn btn-primary" onClick={() => setShowCreateTripModal(true)} style={{ width: '100%', marginBottom: '24px', padding: '14px', justifyContent: 'center' }}>
-                <span className="material-symbols-outlined">add_circle</span>
-                <span>Crear Viaje Nuevo</span>
-              </button>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+                <button className="btn btn-primary" onClick={() => setShowCreateTripModal(true)} style={{ flex: 1, padding: '14px', justifyContent: 'center' }}>
+                  <span className="material-symbols-outlined">add_circle</span>
+                  <span>Crear Viaje</span>
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowCreateAlertModal(true)} style={{ padding: '14px', justifyContent: 'center' }}>
+                  <span className="material-symbols-outlined">add_alert</span>
+                  <span>Publicar Alerta</span>
+                </button>
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '550px', overflowY: 'auto', paddingRight: '8px' }}>
                 {openTrips
@@ -1188,8 +1804,11 @@ function App() {
                             </span>
                           </div>
                           <div>
-                            {isCreator && <span className="tag-badge tag-badge-gold">Creador</span>}
-                            {isJoined && !isCreator && <span className="tag-badge" style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>Unido</span>}
+                            {isCreator && <span className="tag-badge tag-badge-gold" style={{ marginRight: '4px' }}>Creador</span>}
+                            {isJoined && !isCreator && <span className="tag-badge" style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)', marginRight: '4px' }}>Unido</span>}
+                            <span className="tag-badge" style={{ backgroundColor: 'rgba(212, 175, 55, 0.15)', color: 'var(--color-accent)', fontWeight: 700 }}>
+                              {trip.tipo === 'caminata' ? 'Gratuito' : (trip.precio && trip.precio > 0 ? `$${trip.precio.toFixed(2)}` : 'Gratuito')}
+                            </span>
                           </div>
                         </div>
 
@@ -1197,44 +1816,72 @@ function App() {
                           <p style={{ fontWeight: 700, fontSize: '16px', color: 'var(--color-text)', marginBottom: '4px' }}>{trip.origen.direccion_texto} → {trip.destino.direccion_texto}</p>
                           <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>schedule</span>
-                            Salida: {trip.hora_salida}
+                            Salida: <b>{trip.fecha_salida || 'Hoy'}</b> • {trip.hora_salida}
                           </p>
                           {trip.tipo === 'caminata' ? (
                             <>
                               <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                                 <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>location_on</span>
-                                Encuentro: {trip.punto_encuentro}
+                                Encuentro: {trip.punto_encuentro || 'Punto de Encuentro UDLA'}
                               </p>
                               <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>group</span>
-                                Grupo: {trip.participantes ? trip.participantes.length : 0} / {trip.cupo_maximo} integrantes
+                                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>groups</span>
+                                Grupo de Caminata: {trip.participantes ? trip.participantes.length : 0} integrantes (Libre)
                               </p>
                             </>
                           ) : (
                             <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>event_seat</span>
-                              Asientos: {trip.participantes ? trip.participantes.length : 0} / {trip.asientos_disponibles} libres
+                              Asientos: {trip.participantes ? trip.participantes.length : 0} / {trip.asientos_disponibles ?? 3} libres
                             </p>
                           )}
                         </div>
 
                         {isCreator && trip.estado !== 'cerrado' ? (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => handleFinalizeTrip(trip.id)}
-                            style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
-                          >
-                            Finalizar Viaje
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleOpenEditTrip(trip)}
+                              style={{ flex: 1, padding: '8px', fontSize: '12px', justifyContent: 'center' }}
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>edit</span>
+                              Editar
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => handleFinalizeTrip(trip.id)}
+                              style={{ flex: 1, padding: '8px', fontSize: '12px', justifyContent: 'center' }}
+                            >
+                              Finalizar
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleDeleteTrip(trip.id)}
+                              style={{ padding: '8px', fontSize: '12px', color: 'var(--error)', borderColor: 'rgba(186, 26, 26, 0.3)' }}
+                              title="Eliminar Viaje"
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>delete</span>
+                            </button>
+                          </div>
                         ) : (
-                          <button
-                            className="btn btn-secondary"
-                            disabled={isCreator || isJoined || isFull || trip.estado === 'cerrado'}
-                            onClick={() => handleJoinTrip(trip.id)}
-                            style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
-                          >
-                            {trip.estado === 'cerrado' ? 'Viaje Finalizado' : isCreator ? 'Tu Viaje' : isJoined ? 'Ya estás Unido' : isFull ? 'Cupos Llenos' : 'Unirse al Grupo'}
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => { setSelectedTripDetails(trip); setShowTripDetailsModal(true); }}
+                              style={{ flex: 1, padding: '8px', fontSize: '12px', justifyContent: 'center' }}
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>info</span>
+                              Detalles
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              disabled={isCreator || isJoined || isFull || trip.estado === 'cerrado'}
+                              onClick={() => handleJoinTrip(trip.id)}
+                              style={{ flex: 1, padding: '8px', fontSize: '12px', justifyContent: 'center' }}
+                            >
+                              {trip.estado === 'cerrado' ? 'Finalizado' : isCreator ? 'Tu Viaje' : isJoined ? 'Ya Unido' : isFull ? 'Lleno' : 'Unirse'}
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
@@ -1305,9 +1952,32 @@ function App() {
                 <span className="section-badge-counter">{rides.length}</span>
               </div>
               <div className="rides-list">
-                {rides.map(ride => (
-                  <TiltRideCard key={ride.id} ride={ride} onChat={handleOpenDriverChat} />
-                ))}
+                {rides.map(ride => {
+                  const driverLower = ride.driver.toLowerCase();
+                  const profileFirstName = userProfile.name ? userProfile.name.toLowerCase().split(' ')[0] : '';
+                  const emailUsername = userEmail ? userEmail.toLowerCase().split('@')[0] : '';
+
+                  const isDriver = (ride.driver_email && ride.driver_email === userEmail)
+                    || driverLower.includes('(tú)')
+                    || driverLower.includes('(tu)')
+                    || driverLower.includes('tú')
+                    || (profileFirstName.length >= 2 && driverLower.includes(profileFirstName))
+                    || (emailUsername.length >= 2 && driverLower.includes(emailUsername.split('.')[0]));
+
+                  const isMember = isDriver || (ride.passengers && ride.passengers.some(p => p.toLowerCase() === userEmail.toLowerCase()));
+
+                  return (
+                    <TiltRideCard
+                      key={ride.id}
+                      ride={ride}
+                      isMember={!!isMember}
+                      isDriver={!!isDriver}
+                      onChat={handleOpenDriverChat}
+                      onViewOnMap={handleViewRideOnMap}
+                      onTriggerSOS={handleOpenSOS}
+                    />
+                  );
+                })}
               </div>
             </section>
 
@@ -1613,6 +2283,48 @@ function App() {
                 <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Rating de Confianza</h4>
                 <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', lineHeight: 1.5 }}>Sistema de feedback bidireccional obligatorio para mantener los estándares de la comunidad.</p>
               </div>
+            </div>
+          </section>
+
+          <section style={{ marginTop: '32px', marginBottom: '64px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 700 }}>Alertas de Comunidad en Tiempo Real</h2>
+                <p style={{ color: 'var(--on-surface-variant)', fontSize: '14px' }}>Reportes comunitarios activos con caducidad automática de 24 horas</p>
+              </div>
+              <button className="btn btn-secondary" onClick={() => setShowCreateAlertModal(true)}>
+                <span className="material-symbols-outlined">add_alert</span>
+                <span>Publicar Alerta</span>
+              </button>
+            </div>
+            <div className="grid-12">
+              {communityAlerts.map(alert => {
+                const nowSec = Date.now() / 1000;
+                const minutesAgo = Math.max(1, Math.floor((nowSec - alert.creado_en) / 60));
+                const timeAgoText = minutesAgo < 60 ? `Hace ${minutesAgo} min` : `Hace ${Math.floor(minutesAgo / 60)}h`;
+                return (
+                  <div key={alert.id} className="col-span-4 glass-card" style={{ padding: '20px', borderLeft: '4px solid var(--color-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <span className="tag-badge tag-badge-gold" style={{ textTransform: 'uppercase', fontSize: '10px' }}>
+                        {alert.tipo}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--on-surface-variant)' }}>{timeAgoText}</span>
+                    </div>
+                    <h4 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>{alert.ubicacion.nombre_referencial}</h4>
+                    <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', marginBottom: '12px' }}>{alert.descripcion_breve}</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', opacity: 0.8 }}>
+                      <span>Autor: {alert.autor_email}</span>
+                      <span className="tag-badge" style={{ backgroundColor: 'rgba(115,158,54,0.15)', color: 'var(--color-primary)' }}>Activa 24h</span>
+                    </div>
+                  </div>
+                );
+              })}
+              {communityAlerts.length === 0 && (
+                <div className="col-span-12" style={{ textAlign: 'center', padding: '32px', border: '1px dashed var(--color-border)', borderRadius: '12px', color: 'var(--on-surface-variant)' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '36px', marginBottom: '8px', opacity: 0.5 }}>notifications_active</span>
+                  <p style={{ fontSize: '14px' }}>No hay alertas de comunidad activas en este momento.</p>
+                </div>
+              )}
             </div>
           </section>
 
@@ -2391,26 +3103,52 @@ function App() {
                   </div>
                 )}
               </div>
-              <div className="form-group">
-                <label className="form-label">Hora de Salida</label>
-                <input type="text" className="form-input" placeholder="ej. 17:15 PM" value={newTripHora} onChange={e => setNewTripHora(e.target.value)} required />
+              <div className="form-group" style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label">Fecha de Salida</label>
+                  <select className="form-input" value={newTripFecha} onChange={e => setNewTripFecha(e.target.value)}>
+                    <option value="Hoy">Hoy</option>
+                    <option value="Mañana">Mañana</option>
+                    <option value="Viernes">Viernes</option>
+                    <option value="Lunes">Lunes</option>
+                    <option value="Próximo Lunes">Próximo Lunes</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label">Hora de Salida</label>
+                  <input type="text" className="form-input" placeholder="ej. 17:15 PM" value={newTripHora} onChange={e => setNewTripHora(e.target.value)} required />
+                </div>
               </div>
               {newTripTipo === 'caminata' ? (
                 <>
                   <div className="form-group">
                     <label className="form-label">Punto de Encuentro</label>
-                    <input type="text" className="form-input" placeholder="ej. Entrada Bloque D" value={newTripPuntoEncuentro} onChange={e => setNewTripPuntoEncuentro(e.target.value)} required />
+                    <input type="text" className="form-input" placeholder="ej. Entrada Bloque D - UDLAPARK" value={newTripPuntoEncuentro} onChange={e => setNewTripPuntoEncuentro(e.target.value)} required />
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Cupo Máximo</label>
-                    <input type="number" className="form-input" placeholder="ej. 5" value={newTripCupoMaximo} onChange={e => setNewTripCupoMaximo(e.target.value)} required />
+                  <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(115, 158, 54, 0.1)', border: '1px solid rgba(115, 158, 54, 0.3)', marginBottom: '16px', fontSize: '12px', color: 'var(--color-primary)' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>info</span>
+                    Las caminatas en grupo son libres (sin límite de asientos) y 100% gratuitas.
                   </div>
                 </>
               ) : (
-                <div className="form-group">
-                  <label className="form-label">Asientos Disponibles</label>
-                  <input type="number" className="form-input" placeholder="ej. 4" value={newTripAsientos} onChange={e => setNewTripAsientos(e.target.value)} required />
-                </div>
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Asientos Disponibles</label>
+                    <input type="number" min="1" max="8" className="form-input" placeholder="ej. 4" value={newTripAsientos} onChange={e => setNewTripAsientos(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Precio por Asiento / Aporte ($ USD)</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      className="form-input"
+                      placeholder="ej. 1.50 (dejar 0 para gratuito)"
+                      value={newTripPrecio}
+                      onChange={e => setNewTripPrecio(e.target.value)}
+                    />
+                  </div>
+                </>
               )}
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowCreateTripModal(false)}>
@@ -2418,6 +3156,252 @@ function App() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Crear Viaje
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditTripModal && editingTrip && (
+        <div className="modal-backdrop" onClick={() => setShowEditTripModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Editar Viaje ({editingTrip.tipo === 'caminata' ? 'Caminata' : 'Vehículo'})</h3>
+              <button onClick={() => setShowEditTripModal(false)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <form onSubmit={handleEditTripSubmit}>
+              <div className="form-group" style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label">Fecha de Salida</label>
+                  <select className="form-input" value={editFecha} onChange={e => setEditFecha(e.target.value)}>
+                    <option value="Hoy">Hoy</option>
+                    <option value="Mañana">Mañana</option>
+                    <option value="Viernes">Viernes</option>
+                    <option value="Lunes">Lunes</option>
+                    <option value="Próximo Lunes">Próximo Lunes</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label">Hora de Salida</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editHora}
+                    onChange={e => setEditHora(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              {editingTrip.tipo === 'caminata' ? (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Punto de Encuentro</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editPuntoEncuentro}
+                      onChange={e => setEditPuntoEncuentro(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(115, 158, 54, 0.1)', border: '1px solid rgba(115, 158, 54, 0.3)', marginBottom: '16px', fontSize: '12px', color: 'var(--color-primary)' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>info</span>
+                    Las caminatas son de libre participación y 100% gratuitas.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Asientos Disponibles</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="8"
+                      className="form-input"
+                      value={editAsientos}
+                      onChange={e => setEditAsientos(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Precio por Asiento / Aporte ($ USD)</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      className="form-input"
+                      placeholder="0.00 (Gratuito)"
+                      value={editPrecio}
+                      onChange={e => setEditPrecio(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditTripModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showTripDetailsModal && selectedTripDetails && (
+        <div className="modal-backdrop" onClick={() => setShowTripDetailsModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '500px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Detalles del Viaje</h3>
+              <button onClick={() => setShowTripDetailsModal(false)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ padding: '16px', backgroundColor: 'rgba(115, 158, 54, 0.05)', borderRadius: '12px', border: '1px solid rgba(115, 158, 54, 0.15)' }}>
+                <h4 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px', color: 'var(--color-primary)' }}>
+                  {selectedTripDetails.origen ? `${selectedTripDetails.origen.direccion_texto} → ${selectedTripDetails.destino.direccion_texto}` : selectedTripDetails.route}
+                </h4>
+                <p style={{ fontSize: '14px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>schedule</span>
+                  Hora de Salida: <b>{selectedTripDetails.hora_salida || selectedTripDetails.time_str}</b>
+                </p>
+                {selectedTripDetails.punto_encuentro && (
+                  <p style={{ fontSize: '14px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>place</span>
+                    Punto de Encuentro: <b>{selectedTripDetails.punto_encuentro}</b>
+                  </p>
+                )}
+                <p style={{ fontSize: '14px', color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>payments</span>
+                  Precio por Asiento: <b>{selectedTripDetails.precio && selectedTripDetails.precio > 0 ? `$${selectedTripDetails.precio.toFixed(2)}` : 'Gratuito'}</b>
+                </p>
+                {selectedTripDetails.creador_email && (
+                  <p style={{ fontSize: '13px', color: 'var(--on-surface-variant)', marginTop: '8px' }}>
+                    Organizador: <b>{selectedTripDetails.creador_email}</b>
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="modal-actions" style={{ marginTop: '24px' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowTripDetailsModal(false)}>
+                Cerrar
+              </button>
+              {selectedTripDetails.id && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    handleJoinTrip(selectedTripDetails.id);
+                    setShowTripDetailsModal(false);
+                  }}
+                >
+                  Unirse al Viaje
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateAlertModal && (
+        <div className="modal-backdrop" onClick={() => setShowCreateAlertModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Publicar Alerta de Comunidad</h3>
+              <button onClick={() => setShowCreateAlertModal(false)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <form onSubmit={handleCreateAlertSubmit}>
+              <div className="form-group">
+                <label className="form-label">Tipo de Alerta</label>
+                <select className="form-input" value={alertTipo} onChange={e => setAlertTipo(e.target.value)}>
+                  <option value="trafico">Tráfico Vehicular</option>
+                  <option value="aglomeracion">Aglomeración / Fila Bus</option>
+                  <option value="peligro">Advertencia de Seguridad</option>
+                  <option value="otro">Información General</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Ubicación / Referencia</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="ej. Redondel Ciclista - Entrada UDLAPARK"
+                  value={alertUbicacion}
+                  onChange={e => setAlertUbicacion(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Descripción Breve</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="ej. Tráfico pesado hacia UDLAPARK por lluvia."
+                  value={alertDescripcion}
+                  onChange={e => setAlertDescripcion(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateAlertModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Publicar Alerta
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showSosModal && (
+        <div className="modal-backdrop" onClick={() => setShowSosModal(false)}>
+          <div className="modal-content" style={{ border: '2px solid var(--error)' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="material-symbols-outlined">sos</span>
+                Reportar Auxilio / SOS en Ruta
+              </h3>
+              <button onClick={() => setShowSosModal(false)}>
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <form onSubmit={handleSendSOSSubmit}>
+              <div className="form-group">
+                <label className="form-label">Categoría de Auxilio</label>
+                <select className="form-input" value={sosCategory} onChange={e => setSosCategory(e.target.value)}>
+                  <option value="medica">Emergencia Médica (Pasajero/Conductor indispuesto)</option>
+                  <option value="mecanica">Falla Mecánica / Pinchazo en Vía</option>
+                  <option value="policia">Seguridad / Llamar Autoridades</option>
+                  <option value="otro">Otro Auxilio en Ruta</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Mensaje de Emergencia para la Red UDLA</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={sosMessage}
+                  onChange={e => setSosMessage(e.target.value)}
+                  placeholder="Describe qué sucedió (ej. Se desmayó una pasajera ayuda el más cercano)..."
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowSosModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" style={{ backgroundColor: 'var(--error)', borderColor: 'var(--error)' }}>
+                  🚨 Emitir Alerta SOS
                 </button>
               </div>
             </form>

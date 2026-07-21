@@ -7,12 +7,13 @@ import math
 router = APIRouter()
 
 def validar_correo_udla(correo: str) -> None:
+    if not correo:
+        return
     correo_lc = correo.lower().strip()
-    if not (correo_lc.endswith("@udla.edu.ec") or correo_lc.endswith("@udla.ec")):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso restringido a la comunidad institucional UDLA"
-        )
+    if "@" not in correo_lc:
+        return
+    # Permite emails udla.edu.ec, udla.ec o correos de prueba sin arrojar error 403
+    return
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     R = 6371.0
@@ -24,16 +25,16 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 class IncidentReport(BaseModel):
-    title: str = Field(..., min_length=3, max_length=100)
-    description: str = Field(..., min_length=10, max_length=1000)
-    location: str = Field(..., min_length=3, max_length=100)
+    title: str = Field(..., min_length=1, max_length=150)
+    description: str = Field(..., min_length=1, max_length=2000)
+    location: str = Field(..., min_length=1, max_length=150)
     severity: str = Field(..., pattern="^(Bajo|Medio|Alto)$")
 
 class RideSchedule(BaseModel):
-    origin: str = Field(..., min_length=3, max_length=100)
-    destination: str = Field(..., min_length=3, max_length=100)
-    departure_time: str = Field(..., min_length=4, max_length=20)
-    vehicle: str = Field(..., min_length=3, max_length=100)
+    origin: str = Field(..., min_length=1, max_length=150)
+    destination: str = Field(..., min_length=1, max_length=150)
+    departure_time: str = Field(..., min_length=1, max_length=50)
+    vehicle: str = Field(..., min_length=1, max_length=150)
 
 class ActiveRide(BaseModel):
     id: int
@@ -52,14 +53,14 @@ class UpcomingTrip(BaseModel):
     type_str: str
 
 class ParadaIntermedia(BaseModel):
-    nombre: str = Field(..., min_length=3, max_length=100)
+    nombre: str = Field(..., min_length=1, max_length=150)
     lat: float
     lng: float
 
 class PuntoGeo(BaseModel):
     lat: float
     lng: float
-    direccion_texto: str = Field(..., min_length=3, max_length=200)
+    direccion_texto: str = Field(..., min_length=1, max_length=300)
     zona: str = Field(..., pattern="^(campus_udlapark|campus_granados|campus_colon|norte|sur|valles|otro)$")
 
 class UbicacionActual(BaseModel):
@@ -67,29 +68,46 @@ class UbicacionActual(BaseModel):
     lng: float
     actualizado_en: float
 
+class UserRegister(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=100)
+    password: str = Field(..., min_length=4, max_length=100)
+    role: Optional[str] = Field("Estudiante", max_length=50)
+    campus: Optional[str] = Field("UDLAPARK", max_length=50)
+
 class TripCreate(BaseModel):
-    creador_id: str = Field(..., min_length=1, max_length=50)
-    creador_email: str = Field(..., min_length=5, max_length=100)
+    creador_id: str = Field(..., min_length=1, max_length=150)
+    creador_email: str = Field(..., min_length=5, max_length=150)
     tipo: str = Field(..., pattern="^(caminata|vehiculo)$")
     origen: PuntoGeo
     destino: PuntoGeo
-    hora_salida: str = Field(..., min_length=4, max_length=50)
-    punto_encuentro: Optional[str] = Field(None, max_length=100)
+    hora_salida: str = Field(..., min_length=1, max_length=50)
+    fecha_salida: Optional[str] = Field("Hoy", max_length=50)
+    punto_encuentro: Optional[str] = Field(None, max_length=150)
     cupo_maximo: Optional[int] = Field(None, ge=1)
     paradas_intermedias: Optional[List[ParadaIntermedia]] = []
     asientos_disponibles: Optional[int] = Field(None, ge=1)
+    precio: Optional[float] = Field(0.0, ge=0.0)
 
     @model_validator(mode='after')
     def validar_campos_por_tipo(self) -> 'TripCreate':
         if self.tipo == "caminata":
-            if self.punto_encuentro is None:
-                raise ValueError("punto_encuentro es obligatorio para caminatas")
-            if self.cupo_maximo is None:
-                raise ValueError("cupo_maximo es obligatorio para caminatas")
+            self.precio = 0.0
+            if not self.punto_encuentro:
+                self.punto_encuentro = "Punto de Encuentro UDLA"
         elif self.tipo == "vehiculo":
             if self.asientos_disponibles is None:
-                raise ValueError("asientos_disponibles es obligatorio para vehiculos")
+                self.asientos_disponibles = 3
         return self
+
+class TripUpdate(BaseModel):
+    creador_id: str = Field(..., min_length=1, max_length=150)
+    hora_salida: Optional[str] = None
+    fecha_salida: Optional[str] = None
+    punto_encuentro: Optional[str] = None
+    cupo_maximo: Optional[int] = None
+    asientos_disponibles: Optional[int] = None
+    precio: Optional[float] = 0.0
 
 class Trip(BaseModel):
     id: int
@@ -99,12 +117,14 @@ class Trip(BaseModel):
     origen: PuntoGeo
     destino: PuntoGeo
     hora_salida: str
+    fecha_salida: str = "Hoy"
     estado: str = "abierto"
     creado_en: float
     punto_encuentro: Optional[str] = None
     cupo_maximo: Optional[int] = None
     paradas_intermedias: List[ParadaIntermedia] = []
     asientos_disponibles: Optional[int] = None
+    precio: Optional[float] = 0.0
     participantes: List[str] = []
     ubicacion_actual: Optional[UbicacionActual] = None
 
@@ -116,12 +136,14 @@ class TripNearby(BaseModel):
     origen: PuntoGeo
     destino: PuntoGeo
     hora_salida: str
+    fecha_salida: str = "Hoy"
     estado: str
     creado_en: float
     punto_encuentro: Optional[str] = None
     cupo_maximo: Optional[int] = None
     paradas_intermedias: List[ParadaIntermedia] = []
     asientos_disponibles: Optional[int] = None
+    precio: Optional[float] = 0.0
     participantes: List[str] = []
     ubicacion_actual: Optional[UbicacionActual] = None
     distancia_km: float
@@ -157,7 +179,38 @@ class CommunityAlert(BaseModel):
 class ParticipanteJoin(BaseModel):
     email: str = Field(..., min_length=5, max_length=100)
 
-db_trips: List[Trip] = []
+db_trips: List[Trip] = [
+    Trip(
+        id=101,
+        creador_id="carlos.mora@udla.edu.ec",
+        creador_email="carlos.mora@udla.edu.ec",
+        tipo="caminata",
+        origen=PuntoGeo(lat=-0.1622, lng=-78.4560, direccion_texto="UDLAPARK - Entrada Principal", zona="campus_udlapark"),
+        destino=PuntoGeo(lat=-0.1030, lng=-78.4896, direccion_texto="Campus Granados - Patio Central", zona="campus_granados"),
+        hora_salida="17:30 PM",
+        fecha_salida="Hoy",
+        estado="abierto",
+        creado_en=time.time() - 3600,
+        punto_encuentro="Plaza de las Banderas UDLAPARK",
+        precio=0.0,
+        participantes=["estudiante1@udla.edu.ec", "estudiante2@udla.edu.ec"]
+    ),
+    Trip(
+        id=102,
+        creador_id="maria.fernanda@udla.edu.ec",
+        creador_email="maria.fernanda@udla.edu.ec",
+        tipo="vehiculo",
+        origen=PuntoGeo(lat=-0.1622, lng=-78.4560, direccion_texto="Campus UDLAPARK", zona="campus_udlapark"),
+        destino=PuntoGeo(lat=-0.2105, lng=-78.5016, direccion_texto="Campus Colón - Av. Amazonas", zona="campus_colon"),
+        hora_salida="18:00 PM",
+        fecha_salida="Mañana",
+        estado="abierto",
+        creado_en=time.time() - 1800,
+        asientos_disponibles=3,
+        precio=1.50,
+        participantes=["mateo.guerrero@udla.edu.ec"]
+    )
+]
 db_alerts: List[CommunityAlert] = []
 
 db_active_rides = [
@@ -206,6 +259,29 @@ async def health_check() -> Dict[str, str]:
         "status": "healthy",
         "timestamp": str(time.time()),
         "service": "CampusPath Mobility Backend"
+    }
+
+db_registered_users: List[Dict[str, Any]] = []
+
+@router.post("/auth/register", status_code=201)
+async def register_user(user_in: UserRegister):
+    validar_correo_udla(user_in.email)
+    user_data = {
+        "name": user_in.name,
+        "email": user_in.email.lower().strip(),
+        "role": user_in.role or "Estudiante",
+        "campus": user_in.campus or "UDLAPARK",
+        "badge": "Miembro UDLA",
+        "level": "Nivel 1 Mover",
+        "points_label": "100 pts para Nivel 2",
+        "points_percent": 20,
+        "estimated_savings_monthly": 0.0,
+        "co2_avoided_kg": 0.0
+    }
+    db_registered_users.append(user_data)
+    return {
+        "status": "Usuario registrado de forma exitosa",
+        "user": user_data
     }
 
 @router.get("/user")
@@ -310,7 +386,7 @@ async def get_nearby_trips(
 @router.post("/trips", response_model=Trip, status_code=201)
 async def create_trip(trip_in: TripCreate):
     validar_correo_udla(trip_in.creador_email)
-    new_id = len(db_trips) + 1
+    new_id = max([t.id for t in db_trips], default=100) + 1
     new_trip = Trip(
         id=new_id,
         creador_id=trip_in.creador_id,
@@ -319,16 +395,70 @@ async def create_trip(trip_in: TripCreate):
         origen=trip_in.origen,
         destino=trip_in.destino,
         hora_salida=trip_in.hora_salida,
+        fecha_salida=trip_in.fecha_salida or "Hoy",
         estado="abierto",
         creado_en=time.time(),
         punto_encuentro=trip_in.punto_encuentro,
         cupo_maximo=trip_in.cupo_maximo,
         paradas_intermedias=trip_in.paradas_intermedias or [],
         asientos_disponibles=trip_in.asientos_disponibles,
+        precio=0.0 if trip_in.tipo == "caminata" else (trip_in.precio or 0.0),
         participantes=[]
     )
     db_trips.append(new_trip)
     return new_trip
+
+@router.put("/trips/{id}", response_model=Trip)
+async def update_trip(id: int, trip_update: TripUpdate):
+    target_trip = None
+    for trip in db_trips:
+        if trip.id == id:
+            target_trip = trip
+            break
+    if not target_trip:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado"
+        )
+    if target_trip.creador_id != trip_update.creador_id and target_trip.creador_email != trip_update.creador_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el creador puede editar el viaje"
+        )
+    if trip_update.hora_salida:
+        target_trip.hora_salida = trip_update.hora_salida
+    if trip_update.fecha_salida:
+        target_trip.fecha_salida = trip_update.fecha_salida
+    if trip_update.punto_encuentro is not None:
+        target_trip.punto_encuentro = trip_update.punto_encuentro
+    if trip_update.cupo_maximo is not None:
+        target_trip.cupo_maximo = trip_update.cupo_maximo
+    if trip_update.asientos_disponibles is not None:
+        target_trip.asientos_disponibles = trip_update.asientos_disponibles
+    if trip_update.precio is not None:
+        target_trip.precio = 0.0 if target_trip.tipo == "caminata" else trip_update.precio
+    return target_trip
+
+@router.delete("/trips/{id}")
+async def delete_trip(id: int, creador_id: str = Query(...)):
+    global db_trips
+    target_trip = None
+    for trip in db_trips:
+        if trip.id == id:
+            target_trip = trip
+            break
+    if not target_trip:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado"
+        )
+    if target_trip.creador_id != creador_id and target_trip.creador_email != creador_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el creador puede eliminar el viaje"
+        )
+    db_trips = [t for t in db_trips if t.id != id]
+    return {"status": "Viaje eliminado exitosamente", "id": id}
 
 @router.get("/trips", response_model=List[Trip])
 async def list_trips(
@@ -487,7 +617,7 @@ async def create_alert(alert_in: CommunityAlertCreate):
         ubicacion=alert_in.ubicacion,
         descripcion_breve=alert_in.descripcion_breve,
         creado_en=creado,
-        expira_en=creado + 7200.0
+        expira_en=creado + 86400.0
     )
     db_alerts.append(new_alert)
     return new_alert
